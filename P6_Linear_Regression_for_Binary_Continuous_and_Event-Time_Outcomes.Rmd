@@ -1,0 +1,2366 @@
+---
+title: "P6 Linear Regression for Binary, Continuous and Event-Time Outcomes"
+author: "Dominik Frei"
+date: "16.06.2022"
+output:
+  html_document:
+    toc: true
+    toc_float: TRUE
+    number_sections: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+## Abstract
+
+The aim of this work was to get some intuition about linear regression. Three different
+data sets where used (titanic, mtcars, lung) and different types of data where used 
+as dependent variable:  
+- Titanic: Survival (Binary)  
+- mtcars: mpg (Miles per Gallon; Continuous)  
+- lung: Survival(-time) (Time-Event Data)  
+
+Simple regression models where fit using different data types (binary, categorical, 
+continuous) as independent variables. The results where interpreted and the model 
+assumptions where checked.  
+Then multiple linear regression models where fit, using combinations of the independent
+variables used to fit the simple regression models. It was assessed if there is confounding
+or effect modification between the independent variables. Here too, the results where 
+interpreted and the model assumptions where checked.
+
+Finally, in the cases where more independent variables where available, the best model 
+was searched for.
+
+## Resources
+
+Sources of data sets used:  
+- Titanic: http://math.ucdenver.edu/RTutorial/titanic.txt  
+- mtcars: https://r-data.pmagunia.com/dataset/mtcars  
+- lung: https://r-data.pmagunia.com/dataset/r-dataset-package-survival-lung
+
+## What I learned
+
+- (Multiple) Linear Regression: Fitting models, interpreting their results, assessing if there is
+significant confounding or effect modification, check the model assumptions
+- (Multiple) Logistic Regression: Fitting models, interpreting their results, assessing if there is
+significant confounding or effect modification, check the model assumptions
+- (Multiple) Cox Regression: Fitting models, interpreting their results, assessing if there is
+significant confounding or effect modification, check the model assumptions
+
+## What could be improved
+
+- The linearity assumption for logistic regression remains a bit unclear to me  
+
+## Duration
+
+- R: 41 h
+- Other (writing etc.): 4 h
+
+## Glossary / Abbreviations
+
+- CI: Confidence Interval
+
+# Code
+
+Setup:
+```{r message = FALSE}
+library(tidyverse)
+library(knitr)
+library(cowplot)
+library(olsrr)
+library(car)
+library(survival)
+library(survminer)
+
+setwd("C:/Users/domin/Desktop/Dominik/DS/Projects/P6_Basic_Statistics")
+
+Sys.setenv(LANG = "en")
+```
+
+## Binary Outcome
+
+### Logistic Regression
+
+We will use the Titanic data set, which contains information about passengers and 
+if they survived or not (which will serve as outcome; 1 = survived, 0 = died).
+```{r}
+titanic <- read.csv('http://math.ucdenver.edu/RTutorial/titanic.txt',sep='\t')
+titanic %>% str()
+```
+
+#### Binary Predictor Variable
+
+We will use the sex of the person as predictor for their survival of the incident.
+
+What is the distribution of the predictor variable:
+```{r}
+table(titanic$Sex)
+```
+Produce a two by two table together with survival:
+```{r}
+table(titanic$Sex, titanic$Survived)
+```
+Of the people that died, more where males.
+Of the people that survived more where females.
+
+To fit a (linear) logistic regression model we use the stats::glm function and 
+specify "family = binomial()":
+```{r}
+lregm1 <- glm(data = titanic, Survived ~ Sex, family = binomial())
+summary(lregm1)
+```
+There is a significant (alpha = 0.05) difference in survival for males and females, 
+since both p-values are below 0.05 and the odds ratio of survival for males 
+compared to females (with 95% CI) is:
+```{r}
+#predicted oddsratio
+exp(-2.30118)
+#lci
+exp(-2.30118-1.96*0.13488)
+#uci
+exp(-2.30118+1.96*0.13488)
+```
+0.10 (0.08, 0.13), which does not include 1.
+
+For males the odds for survival are:
+```{r}
+exp(0.69315-2.30118)
+```
+
+And for females:
+```{r}
+exp(0.69315)
+```
+
+The probability for survival for males is:
+```{r}
+exp(0.69315-2.30118)/(1+exp(0.69315-2.30118)) %>% round(., digits = 2)
+```
+And for females:
+```{r}
+exp(0.69315)/(1+exp(0.69315)) %>% round(., digits = 2)
+```
+
+**Check Model Assumptions**
+
+Since here we use a binary variable to predict another binary variable the 
+assumptions are the same as for a chi squared test.
+The cells in the contingency table are mutually exclusive and we assume that the
+observations are independent.
+
+#### Categorical Predictor Variable
+
+We will now use the PClass as predictor for survival. PClass is the class the passengers where in,
+with the 1st being the "best" and most expensive followed by 2nd and 3rd classes.
+
+How many passengers where in which class?
+```{r}
+table(titanic$PClass)
+```
+
+Produce contingency table for PClass and survival:
+```{r}
+table(titanic$PClass, titanic$Survived)
+```
+We can see from this that the probability of survival decreased from the 1st to 
+the 2nd and from the 2nd to the 3rd class.
+
+Fit a logistic regression model. Since PClass is formatted as factor, the function
+interprets it as categorical and there is no need to create dummy variables.
+```{r}
+lregm2 <- glm(data = titanic, Survived ~ PClass, family = binomial())
+summary(lregm2)
+```
+The first class is the reference group and is represented by the intercept. The other
+two coefficients represent the log(oddsratios) for survival of the other two groups each compared 
+to the 1st class respectively.
+```{r}
+confint(lregm2)
+```
+There is a statistically significant difference (alpha = 0.05) between all three
+coefficients, since the CIs of coefficients exclude each other.
+
+Analogous to when we used sex as predictor, we can calculate the odds ratios between
+the groups for example between 1st and 2nd:
+```{r}
+exp(-0.7052)
+```
+The odds for survival of each of the classes are:
+- 1st
+```{r}
+exp(0.4029)
+```
+- 2nd
+```{r}
+exp(0.4029-0.7052)
+```
+
+- 3rd
+```{r}
+exp(0.4029-1.8265)
+```
+and the respective probabilities for survival:
+
+- 1st
+```{r}
+exp(0.4029)/(1+exp(0.4029)) %>% round(., digits = 2)
+```
+- 2nd
+```{r}
+exp(0.4029-0.7052)/(1+exp(0.4029-0.7052)) %>% round(., digits = 2)
+```
+
+- 3rd
+```{r}
+exp(0.4029-1.8265)/(1+exp(0.4029-1.8265)) %>% round(., digits = 2)
+```
+
+**Check Model Assumptions**
+
+Again, there is not much to test here. The assumptions are the same as for the chi squared test.
+The observations are independent and the cells in the contingency table are mutually exclusive.
+
+#### Continuous Predictor Variable
+
+We will use age as a predictor for survival.
+
+What is the distribution of Age in this dataset?
+```{r}
+summary(titanic$Age)
+```
+There are many NA values, which we will just exclude here (by specifying na.action = "na.omit", 
+when fitting the model).
+We also get some values below 1, which are likely to be babies where age was provided in months.
+e.g. for 0.17:
+```{r}
+0.17*12
+```
+the person was around 2 months old.
+
+Produce boxplot for age by survival:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(titanic$Age ~ titanic$Survived)
+```
+The means and distributions for the two groups are more or less the same.
+So we can already tell, that age by itself will not explain a lot of the variability in survival.
+Normally we would stop here and not fit a model with only Age as predictor for survival.
+However we will continue for exercise.
+
+Fit the logistic regression model:
+```{r}
+lregm3 <- glm(data = titanic, Survived ~ Age, family = binomial(), na.action = "na.omit")
+summary(lregm3)
+```
+The found coefficients are not statistically significant at an alpha level of 0.05.
+
+Lets look at the predictions made by the model:
+Get the probabilities of survival for each passenger with known age and what the prediction would be:
+```{r}
+prob_age <- predict(lregm3, type = "response")
+pred_survived_age <- ifelse(prob_age > 0.5, 1, 0)
+table(pred_survived_age)
+```
+If we would choose 0.5 as cut off, the model predicts death for everybody. 
+This could be explained by assuming that age 
+does not help in predicting anything and because most people in the sample died,
+the model predicts death for everybody.
+
+**Check Model Assumptions**
+
+- Linearity Assumption
+
+We have to check if there is a linear relationship between a continuous predictor
+and the logodds of the probability for a positive outcome (here survival). 
+
+We can check this by plotting the predictor variable versus the logodds of the outcome:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+titanic_age <- titanic %>%
+  filter(is.na(Age) == FALSE) %>%
+  cbind(., prob_age) %>%
+  mutate(logodds = log(prob_age/(1-prob_age)))
+
+titanic_age %>% ggplot(aes(x = Age, y = logodds))+
+  geom_point() +
+  geom_smooth(method = "loess") + 
+  theme_classic()
+```
+  
+The fit is linear. However it seems like this must always be the case if only one continuous variable is 
+used as predictor.
+Since the function just fits a linear model for the log(odds) to the predictor variable.
+This seems to be only important if multiple continuous predictors are used.
+This remains unclear to me.
+
+- Influential values
+
+We can inspect a plot of the Cooks distances for all the values.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(lregm3, which = 4, id.n = 3)
+```
+We get no values over the cut off of 1 and none that really stand out too much 
+compared to the others. Therefore this assumption is fulfilled.
+
+### Multiple Logistic Regression
+
+#### Binary + Categorical Predictor Variables
+
+We will use Sex and PClass together to model survival.
+
+Lets look at a contingency table for Sex vs PClass to get an idea about the distributions:
+```{r}
+table(titanic$PClass, titanic$Sex)
+```
+In every class there are more males, this is most extreme in the third class.
+
+Lets split the tables by survival:
+```{r}
+table(titanic$PClass, titanic$Sex, titanic$Survived)
+```
+We can calculate the survival probabilities for each class:
+```{r}
+p_survival <- data.frame(female = c(134/(9+134), 94/(13+94), 80/(132+80)), male = c(59/(120+59), 25/(148+25), 58/(441+58)))
+row.names(p_survival) <- c("1st", "2nd", "3rd")
+p_survival %>% kable(digits = 2)
+```
+We see that females have a better probability for survival when adjusted for class
+and higher classes have better survival probabilities when adjusted for sex.
+
+This confirms the tendencies that we had already seen when we used those two 
+variables separately to fit a model.
+
+Fit a model using both variables:
+```{r}
+mlregm1 <- glm(data = titanic, Survived ~ Sex + PClass, family = binomial())
+summary(mlregm1)
+```
+All of the coefficients differ significantly from zero at an alpha of 0.05.
+We can compare the Residual Deviance and the AIC to the two models that used only
+one of the predictors.  
+Both values are smaller for this model then for the other two.  
+The AIC value is a measure for how parsimonious the model is and a lower value
+is better. Therefore, using this as a measure the model using both variables should
+be preferred.  
+The residual deviance measures how well the model can predict the outcome and a 
+lower values is better.  
+So the model improved in both aspects.
+
+**Check Model Assumptions**
+
+Again, there is not much to test here. The assumptions are the same as for the chi squared test.
+The observations are independent and the cells in the contingency table are mutually exclusive.
+
+#### Categorical + Continuous Predictor Variables
+
+We will use PClass and Age as predictors for survival.
+
+lets look at the age distributions for each PClass:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(titanic$Age ~ titanic$PClass)
+```
+There is a decrease of the mean from 1st to 2nd and 2nd to 3rd class. There is 
+quite a lot of overlap though.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(titanic$Age ~ titanic$PClass + titanic$Survived)
+```
+When we split the data by survival, we see again a decrease in the mean age from 
+1st to 2nd and 2nd to 3rd class
+(in both, the groups that survived and those that died). We also see that the groups 
+that survived have a lower mean than those that did not survive (adjusted for class).
+
+Instead of a box plot it might be interesting to see a density plot for each 
+of the groups (violin plot):
+```{r warning=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+titanic %>% ggplot(aes(x = paste(PClass, Survived, sep = "_"), y = Age)) +
+  geom_violin() +
+  geom_boxplot(width=0.1) +
+  scale_y_continuous(breaks=seq(0,75,by=5)) +
+  theme_classic()
+```
+Here we can see, that not many children (under the age of 10-15) died.
+In the 1st class more older people died, but there is still quite some overlap.
+In the 2nd class no people over 55 survived and no people under ca. 13 died, for the ages
+in between the distributions look very similar between the survived and dead groups.
+In the 3rd class more children survived (not all) and the point with maximal density is
+a bit lower for the group that survived. The group of the people that died has a higher density at the higher ages of the group (>35).  
+
+From these plots we can already see that the relationship between age and survival 
+is confounded by PClass, since PClass is related to age as well as survival.
+Therefore the model combining the two should be "better" then the models fit for 
+the variables individually.
+
+Fit a model with the two variables:
+```{r}
+mlregm2 <- glm(data = titanic, Survived ~ Age + PClass, family = binomial())
+summary(mlregm2)
+```
+This model has lower values for AIC and residual deviance then the unadjusted models.
+However compared to the unadjusted model for age, the improvement is not that big.
+All the coefficients differ significantly from zero.
+
+In order to assess if there is statistically significant confounding we can compare
+the coefficients from the adjusted and unadjusted models.
+```{r}
+mlregm2_comp_coef <- data.frame(unadjusted_coeff = c(-0.7052, -1.8265, -0.008795),
+                                unadjusted_lci = c(-0.7052-1.96*0.1660, -1.8265-1.96*0.1481, -0.008795-1.96*0.005232), 
+                                unadjusted_uci = c(-0.7052+1.96*0.1660, -1.8265+1.96*0.1481, -0.008795+1.96*0.005232),
+                                adjusted_coeff = c(-1.145820, -2.231504, -0.038504),
+                                adjusted_lci = c(-1.145820-1.96*0.220260, -2.231504-1.96*0.228993, -0.038504-1.96*0.006546), 
+                                adjusted_uci = c(-1.145820+1.96*0.220260, -2.231504+1.96*0.228993, -0.038504+1.96*0.006546))
+row.names(mlregm2_comp_coef) <- c("PClass2nd", "PClass3rd", "Age")
+mlregm2_comp_coef %>% kable(digits = 2)
+```
+We see that there was a statistically significant change in the slope for Age, since the adjusted and unadjusted CIs exclude each other.
+This confirms that there was statistically significant confounding of the association 
+between Age and survival.  
+There where also quite big changes in magnitudes of the two PClass coefficients,
+those are however not statistically significant.  
+
+Lets see how the model fits the data here, by plotting age against the probability for
+survival and grouping by PClass:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mlregm2_ps <- cbind(titanic[is.na(titanic$Age) == FALSE,], probability_surv = predict(mlregm2, type = "response"))
+
+ggplot(data = mlregm2_ps, aes(x = Age, y = probability_surv, shape = PClass, color = as.factor(Survived))) +
+  geom_point() +
+  xlim(0, 80) +
+  ylim(0, 1) +
+  geom_hline(yintercept = 0.5) +
+  guides(color = guide_legend(title = "Survived")) +
+  theme_classic()
+```
+We can see that for all classes the probability for survival decrease with higher age
+and with higher PClass. The fit of the third class could probably be improve (the young
+children could be predicted to survive)
+
+We can also fit a model with interaction terms, to see if there is statistically 
+significant effect modification.
+```{r}
+mlregm3 <- glm(data = titanic, Survived ~ Age + PClass + Age*PClass, family = binomial())
+summary(mlregm3)
+```
+The AIC and residual deviance are very close to the ones of the model without the
+interaction terms. The interaction terms dont differ significantly from zero.
+Both these facts suggest, that the interaction terms dont add anything to the model
+and that there is probably no effect modification of PClass on the association 
+between Age and survival (and the other way around).
+
+Repeat the plot from above for the probabilities given by the model with interaction terms:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mlregm3_ps <- cbind(titanic[is.na(titanic$Age) == FALSE,], probability_surv = predict(mlregm3, type = "response"))
+
+ggplot(data = mlregm3_ps, aes(x = Age, y = probability_surv, shape = PClass, color = as.factor(Survived))) +
+  geom_point() +
+  xlim(0, 80) +
+  ylim(0, 1) +
+  geom_hline(yintercept = 0.5) +
+  guides(color = guide_legend(title = "Survived")) +
+  theme_classic()
+```
+Visually there is no big difference to the model without the interaction terms.
+
+**Check Model Assumptions**
+
+- Linearity Assumption
+
+We have already checked this for Age above.
+
+- Influential values
+
+We can inspect a plot of the Cooks distances for all the values.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(lregm3, which = 4, id.n = 3)
+```
+Looks ok.
+
+#### Binary + Categorical + Continuous Predictor Variables
+
+We will now use Sex, PClass and Age together as predictors:
+
+Lets look at the distributions of age in the different groups (combinations of survival, 
+Sex and PClass):
+```{r warning=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+titanic %>% ggplot(aes(x = paste(PClass, Survived, Sex,  sep = "_"), y = Age)) +
+  geom_violin() +
+  geom_boxplot(width=0.1) +
+  scale_y_continuous(breaks=seq(0,75,by=5)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+There are differences between the distributions for males and females, however they
+are not always what we would expect intuitively / dont follow the general trends 
+in the data we had previously seen. For example in 1st class there 
+are some female children that died, while no male children died. Or in 3rd class
+more female children than male children died. It is possible that "the rules change"
+between different age groups (e.g. for children). Maybe male children had a better
+chance of survival. This would indicate that there is effect modification of
+the association of Sex/PClass with survival by Age (and the other way around).
+Or it could just be due to outliers.
+
+```{r}
+mlregm4 <- glm(data = titanic, Survived ~ Age + PClass + Sex, family = binomial())
+summary(mlregm4)
+```
+The AIC as well as the residual deviance improved quite a lot compared to the model
+using Age and PClass as predictor.  
+All the coefficients are significantly different from zero.  
+In order to see if there is statistically significant confounding we will calculate the
+95% CIs of all the unadjusted and adjusted associations and then see if they overlap:
+```{r}
+mlregm4_comp_coef <- data.frame(unadjusted_coeff = c(-0.7052, -1.8265, -0.008795, -2.30118),
+                                unadjusted_lci = c(-0.7052-1.96*0.1660, -1.8265-1.96*0.1481, -0.008795-1.96*0.005232, -2.30118-1.96*0.13488), 
+                                unadjusted_uci = c(-0.7052+1.96*0.1660, -1.8265+1.96*0.1481, -0.008795+1.96*0.005232, -2.30118+1.96*0.13488),
+                                adjusted_coeff = c(-1.291962, -2.521419, -0.039177, -2.631357),
+                                adjusted_lci = c(-1.291962-1.96*0.260076, -2.521419-1.96*0.276657, -0.039177-1.96*0.007616,
+                                                 -2.631357-1.96*0.201505), 
+                                adjusted_uci = c(-1.291962+1.96*0.260076, -2.521419+1.96*0.276657, -0.039177+1.96*0.007616,
+                                                 -2.631357+1.96*0.201505))
+row.names(mlregm4_comp_coef) <- c("PClass2nd", "PClass3rd", "Age", "Sex")
+mlregm4_comp_coef %>% kable(digits = 3)
+```
+- For PClass the coefficients change with adjustment for Sex and Age, but the difference 
+is not statistically significant.  
+- For Age the coefficient changes with adjustment for PClass and Sex and the difference
+is statistically significant.  
+- For Sex the coefficient changes with adjustment for PClass and Age, but the difference
+is not statistically significant.  
+
+Plot Age against probability of survival for the different combinations of
+Sex and PClass:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mlregm4_ps <- cbind(titanic[is.na(titanic$Age) == FALSE,], probability_surv = predict(mlregm4, type = "response")) 
+
+mlregm4_fit <- ggplot(data = mlregm4_ps, aes(x = Age, y = probability_surv, shape = paste(PClass, Sex, sep = "_"), color = as.factor(Survived))) +
+  geom_point() +
+  xlim(0, 80) +
+  ylim(0, 1) +
+  geom_hline(yintercept = 0.5) +
+  guides(shape = guide_legend(title = "PClass_Sex")) +
+  guides(color = guide_legend(title = "Survived")) +
+  theme_classic()
+
+mlregm4_fit
+```
+It seems like there would be room for improvement for certain groups.
+For example males in 2nd and 3rd class, could be fit in a manner where children survive,
+or females in the third class would generally have a lower probability of survival
+(transpose all the points down). Compared to the model using only PClass and Age as
+predictor, we see that sex helps a lot in separating for survival. E.g. most females
+in the 2nd and 3rd classes survive, while this is not the case for the males in
+these classes.  
+
+Lets check if there is effect modification by Age on the association between the
+PClass/Sex and Survival.  
+Fit a model with interaction terms of Sex and PClass with Age:
+```{r}
+mlregm5 <- glm(data = titanic, 
+               Survived ~ Age + PClass + Sex + Age*PClass + Age*Sex
+               ,family = binomial())
+summary(mlregm5)
+```
+The AIC as well as the residual deviance decreased slightly compared to the model 
+without the interaction terms.  
+The interaction terms for Age and PClass = 2 as well as Age and Sex are 
+statistically significant. The one for Age with PClass = 3rd is not.  
+The intercept in this model represents the estimate of the log(odds) for females
+with PClass = 1 at Age zero. It is statistically significant as well.
+This is good because there is data that is close to the intercept 
+(females in PClass = 1 of very young age).  
+The coefficient for the 3rd PClass is statistically significant, while the coefficients
+for Age, 2nd PClass, Sex = male are no longer statistically significant.  
+
+The results of the model can be interpreted as follows:  
+- The relationship between Age and Survival is different for males and females
+(it is advantageous to fit a different slope)  
+- The relationship between Age and Survival is different between 1st and 2nd class.
+For the 3rd class the relationship does not differ significantly from the 1st class.
+
+Plot Age against probability of survival:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mlregm5_ps <- cbind(titanic[is.na(titanic$Age) == FALSE,], probability_surv = predict(mlregm5, type = "response")) 
+
+mlregm5_fit <- ggplot(data = mlregm5_ps, aes(x = Age, y = probability_surv, shape = paste(PClass, Sex, sep = "_"), color = as.factor(Survived))) +
+  geom_point() +
+  xlim(0, 80) +
+  ylim(0, 1) +
+  geom_hline(yintercept = 0.5) +
+  guides(shape = guide_legend(title = "PClass_Sex")) +
+  guides(color = guide_legend(title = "Survived")) +
+  theme_classic()
+
+mlregm5_fit
+```
+We can see that some of the slopes of the fit for females in 1st and 3rd class
+changed direction, meaning higher Age would increase probability for survival. For
+the females in the 3rd class this doesnt make much sense.
+
+Lets compare the plots of the fit for both models side by side:
+```{r, fig.show="hold", out.width = '50%'}
+mlregm4_fit
+mlregm5_fit
+```
+The curves for males in 2nd and 3rd class seem better in the model with interaction
+terms, as they descend more with Age. Otherwise it doesnt seem like one of the models 
+is clearly better at separating the true values.
+
+Lets also fit a model with interaction terms for PCLass and Sex:
+```{r}
+mlregm6 <- glm(data = titanic, 
+               Survived ~ Age + PClass + Sex + Age*PClass + Age*Sex + Sex*PClass
+               ,family = binomial())
+summary(mlregm6)
+```
+The residual deviance and AIC are again a bit lower then in the last model.
+
+Plot again Age against predicted probability for survival:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mlregm6_ps <- cbind(titanic[is.na(titanic$Age) == FALSE,], probability_surv = predict(mlregm6, type = "response")) 
+
+ggplot(data = mlregm6_ps, aes(x = Age, y = probability_surv, shape = paste(PClass, Sex, sep = "_"), color = as.factor(Survived))) +
+  geom_point() +
+  xlim(0, 80) +
+  ylim(0, 1) +
+  geom_hline(yintercept = 0.5) +
+  guides(shape = guide_legend(title = "PClass_Sex")) +
+  guides(color = guide_legend(title = "Survived")) +
+  theme_classic()
+```
+Here females in 3rd class are almost all predicted to die.
+
+Including PClass, Sex and Age as predictors is clearly advantageous, compared to only PClass
+and Age.
+It is a bit unclear if the small improvement in residual deviance and AIC of the models
+with interaction terms justify the increase of the model complexity by introducing
+them.
+
+**Check Model Assumptions**
+
+- Linearity Assumption
+
+We have already checked this for Age above. As we did not add any new continuous variables
+there is no need to redo this.
+
+- Influential values
+
+We can inspect a plot of the Cooks distances for all the values.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlregm4, which = 4, id.n = 3)
+```
+Looks ok. Record number two is quite influential. This is a female 1st class passenger
+of age 2, who died. It makes sense that this would be influential, as she had all the
+attributes that would generally predict survival, but she died. So the record
+goes against the majority of the other data and therefore the fit model.
+
+### Possible further inqueries
+
+Since we had already used all of the possible predictor variables (except name) 
+there aren't any additional variables that could be included in the model.
+
+However one could try to make age groups and use it as a categorical variable.
+This might make sense, since the relationship to survival probably is not really linear,
+but maybe more a step function, meaning the probability for survival probably changes when
+one enters a new age category, rather then if one is 1 year younger or older.  
+For example children under under ca. 15 years have a different probability and there
+probably is no big difference if a child is 5 or 6 years old.  
+Older people on the other side have a decreased probability of survival. Here the cut off
+seems not to be that clear as for children and would be harder to find. 
+Maybe Age could just be replaced with a binary variable that indicates if the person is
+under 15 years old.  
+The problem with the Age variable is the high number of missing values. 
+We could try to impute those, which would also be simplified by transforming it 
+into a categorical variable.  
+
+From the names variable one could try to exctract certain information, such as:   
+- Marriage status (Miss vs. Mrs) and to whom they are married (the name of the husband
+is included in their name). One could imagine that survival of the partners might correlate.  
+- Title, which could give some clues about social status (Dr., Major etc.) 
+or Age (Master for male children). For these we would then have to make sure if they correlate
+with PClass, or Age (or a categorical version of Age) and which to then include 
+in the model.
+
+### Create a Title Variable
+
+Initially it was not planned to do this, but I got curious about variable that 
+contains the title when writing the section above. We will only do a quick analysis.  
+
+We will extract the title from the name of the passenger and fit a model with it.  
+
+Create title variable:
+```{r}
+titanic <- titanic %>% mutate(Title_0 = sub("^.*?, ", "", x = .$Name)) %>% 
+        mutate(Title = as.factor(sub(" .*", "", x = .$Title_0))) %>% 
+        select(!Title_0)
+```
+
+What distinct values did we get?
+```{r}
+summary(titanic$Title)
+```
+There are some instances, where we did not get the title, but a name or another word.
+We will exclude all the records with values that occur less then three times 
+(since we are just doing a quick analysis):
+```{r}
+titanic_t <- titanic %>% group_by(Title) %>% 
+        mutate(count=n()) %>% 
+        filter(count > 3) %>% 
+        select(!count)
+
+#drop the excluded levels
+titanic_t$Title <- droplevels(titanic_t$Title)
+```
+
+Tabulate the title split by survival:
+```{r}
+table(titanic_t$Title, titanic_t$Survived)
+```
+The separation is not perfect and there are some counter intuitive numbers, 
+for example I would have expected that most of the "Masters" would have survived.
+
+Fit a model:
+```{r}
+mlregm7 <- glm(data = titanic_t, 
+               Survived ~ Title
+               ,family = binomial())
+summary(mlregm7)
+```
+The AIC and residual deviance are not very good compared to the model with Sex, Age and PClass.
+The only coefficient that differs significantly from zero is the one for Mr.
+
+Lets fit a model including also PClass, since the title does not contain any 
+information about the class (the only hint could be the title Dr, which we could
+expect to be in 1st class):
+```{r}
+mlregm8 <- glm(data = titanic_t, 
+               Survived ~ Title + PClass
+               ,family = binomial())
+summary(mlregm8)
+```
+The two scores improved a bit, but not that much.
+
+Lets try to add Age as well:
+```{r}
+mlregm9 <- glm(data = titanic_t, 
+               Survived ~ Title + PClass + Age
+               ,family = binomial())
+summary(mlregm9)
+```
+This improves the model quite a lot. So there might be a certain added value.
+However it is difficult to say, since the inclusion of Age leads to all the 
+records with NA values to be excluded, so we cannot really compare the two models directly.
+
+We have to fit a model with Title and PClass only including the records where Age is not NA:
+```{r}
+#filter out Age == NA
+titanic_t_a <- titanic_t %>% filter(!is.na(Age))
+#fit model
+mlregm10 <- glm(data = titanic_t_a, 
+               Survived ~ Title + PClass
+               ,family = binomial())
+summary(mlregm10)
+```
+The AIC and residual deviance are pretty close to the model above. This indicates 
+that the records that where always excluded, when Age was added to the model might 
+be harder to classify. This puts into question some of the findings made above,
+where age was included.
+
+Lets fit a model with only these records using only Title as predictor:
+```{r}
+mlregm11 <- glm(data = titanic_t_a, 
+               Survived ~ Title
+               ,family = binomial())
+summary(mlregm11)
+```
+The AIC and residual deviance are not far off compared to the model above.
+So the title variable really does contain some valuable information and it would 
+make sense to investigate this further.
+
+It could also be interesting to have a closer look at the records, where Age is missing,
+since excluding them leads to improved performance of the model.
+
+## Continuous Outcome
+
+### Simple Linear Regression
+
+We will use the mtcars dataset and mpg (miles / gallon) as outcome variable.
+
+Load data and show structure:
+```{r}
+data(mtcars)
+str(mtcars)
+```
+
+#### Binary Predictor Variable
+
+We will use am = Transmission (0 = automatic, 1 = manual) as predictor variable.
+
+Show the distribution of mpg within the two groups of am:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = mtcars, mpg ~ am)
+```
+We can see that for cars with automatic transmission (am = 0), mpg is generally lower then for
+cars with manual transmission (am = 1), since their mean is lower. The distribution of mpg in
+automatic cars is more or less symmetric, while for manual transmission it is right skewed.
+
+Reformat am as factor:
+```{r}
+mtcars <- mtcars %>% mutate(am = as.factor(am))
+```
+
+How many cars are there per group?
+```{r}
+table(mtcars$am)
+```
+Fit a linear regression model:
+```{r}
+slr1 <- lm(data = mtcars, mpg ~ am)
+summary(slr1)
+```
+There is a significant difference (alpha = 0.05) between the means calculated for each of the two groups
+(indicated by the significant p-vlaue for "am1" and because the 95% CIs for coefficients, that where fit for the two groups 
+(automatic: 17.147 +/- 1.96x1.125; manual: 24.392 +/- 1.96x1.764) dont overlap.).   
+The intercept is also statistically significant indicating that the calculated 
+mean for am = 0 is a better predictor of the mpg than zero.
+
+**Check Model Assumptions**
+
+- Linearity
+
+Since here the model just calculates the means of mpg for two different subsets, the
+linearity assumption is not an issue.
+
+- Homoscedasticity
+
+The same goes for homoscedasticity.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(slr1, which = 2)
+```
+This seems to be more or less the case. We can also assess the same thing from 
+the previously made boxplots, Since the residuals her are just the differences between the 
+mean and the outcome value (mpg). Therefore if the values are more or less normally 
+distributed around the mean, the same goes for the residuals.  
+Here we have seen that for cars with manual transmission, this is not perfectly fulfilled.
+
+#### Categorical Predictor Variable
+
+We will use cyl (Number of cylinders) as ordinal predictor. We cannot necessarily
+assume that the influence on mpg is as if it was a continuous parameter (e.g. the
+difference between 4 and 6 cylinders is the same as the difference between having 6 and 8 cylinders).
+
+Show the distribution of mpg within the two groups of am:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = mtcars, mpg ~ cyl)
+```
+We see that the distributions for the three groups dont show much overlap.
+There is some right skew in the distributions of the 4 and 8 cylinder groups.
+
+How many cars are there in each group:
+```{r}
+table(mtcars$cyl)
+```
+Reformat cyl as factor. Otherwise it would be interpreted by the lm() function
+as continuous:
+```{r}
+mtcars <- mtcars %>% mutate(cyl = as.factor(cyl))
+```
+
+Fit simple linear model:
+```{r}
+slr2 <- lm(data = mtcars, mpg ~ cyl)
+summary(slr2)
+```
+The significant p-values for cyl6 and cyl8 indicate that their means differ significantly from cyl = 4.
+The significant p-value of the intercept indicates that the mean for cyl = 4 differs significantly from zero.
+
+The means of the three groups are also significantly different from eachother since 
+the 95% CIs for all three coefficients (using the t-distribution due to the
+sample size), dont overlap (see calculation below).
+
+We calculate the CI from a t-distribution of 32-3 degrees of freedom (sample size minus
+1 for each estimated coefficient):
+```{r}
+#Intercept
+slr2$coefficients[[1]] - qt(p = 0.975, df = 29)*0.9718
+slr2$coefficients[[1]] + qt(p = 0.975, df = 29)*0.9718
+#cyl6
+slr2$coefficients[[2]] - qt(p = 0.975, df = 29)*1.5583
+slr2$coefficients[[2]] + qt(p = 0.975, df = 29)*1.5583
+#cyl8
+slr2$coefficients[[3]] - qt(p = 0.975, df = 29)*1.2986
+slr2$coefficients[[3]] + qt(p = 0.975, df = 29)*1.2986
+```
+The adjusted R squared describes how much of the variation in the data is explained by the model
+adjusted for the number of predictor variables used. If there are only variables used, that
+add to the model it is close to the unadjusted R squared, which is the case here.
+The value we got here (0.714) is quite good and means that the model explains
+around 70 percent of the variability in the data.
+
+**Check Model Assumptions**
+
+Here again, since the model just calculates the means of mpg for different subsets, the
+linearity and homoscedasticity assumptions are not an issue.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(slr2, which = 2)
+```
+This is not perfect, but should be ok.
+
+#### Continuous Predictor Variable
+
+We will now use qsec (1/4 mile time) to predict mpg.
+
+Lets have a look at the distribution of the values
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+boxplot(mtcars$qsec)
+```
+  
+The data is a bit left skewed (towards lower values).
+
+Lets produce a scatter plot of mpg vs qsec:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+ggplot(data = mtcars, aes(x = qsec, y = mpg)) +
+  geom_point() +
+  theme_classic()
+```
+  
+There is a general increase of mpg with higher qsec times, but the association 
+does not seem very strong. Nevertheless it makes sense to fit a linear model here.
+
+Fit a linear regression model:
+```{r}
+slr3 <- lm(data = mtcars, mpg ~ qsec)
+summary(slr3)
+```
+The adjusted R squared is quite low (0.15) meaning this model does not do a good job in
+explaining the variance in the data. This is consistent with the scatter plot above.  
+The model shows a statistically significant association between qsec and mpg at an
+alpha of 0.05 (since the p-value, 0.0171 < 0.05). The intercept here is the theoretical
+mpg at the a theoretical qsec of zero. As this is impossible the coefficient is not 
+meaningful here.  
+The intercept is not statistically significant in this model. Since we dont have any values near
+the intercept this not a big problem, as it again only serves to fit the values in
+"further up" where the values of our sample are.  
+It could however be a problem if we had some values near the intercept.
+
+We can change the reference point for qsec from 0 to 14 by fitting a model for qsec-14
+as predictor for mpg.
+This would mean that the intercept would become more meaningful, as qsec = 14 is a
+possible value.
+Then the intercept should hopefully be statistically significant.
+```{r}
+#valculate values qsec-14
+mtcars_qsec14 <- mtcars %>% mutate(qsec_14 = qsec-14)
+#fit model
+slr4 <- lm(data = mtcars_qsec14, mpg ~ qsec_14)
+summary(slr4)
+```
+The intercept changed and the coefficient is now statistically significant. This
+means, now we have more certainty that the true value for the intercept is not zero,
+which was not the case for the intercept in the previous model. This is also evident
+from the standard errors of the intercepts from the two models (ca 10 with the reference at 0
+and ca. 2.3 with the reference at 14.)
+
+Plot the model fit (with reference at 0)
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+ggplot(data = mtcars, aes(x = qsec, y = mpg)) +
+  geom_point() +
+  theme_classic() +
+  geom_smooth(method='lm')
+```
+  
+**Check Model Assumptions**
+
+- Linearity
+
+We had already looked at the scatter plot above. There is definitely not a strong linear relationship, 
+but its good enough to fit a linear model.
+
+- Homoscedasticity
+
+To assess this we can look at a plot of the fitted value versus the
+sqrt of the absolute standardized residuals:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(slr3, which = 3)
+```
+We see from the datapoints that there is not really a clear trend of increasing/decreasing
+variance on either side (higher, lower fitted values). Here the red line seems to
+indicate a slight trend from bottom left to top right, however this is only due to there being
+"very low / high"  fitted values, which have a lot of influence of the fit of this
+line.
+We can consider this assumption fulfilled
+
+- Extreme Values / Outliers
+
+We can look at the Cooks distance to asses this:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(slr3, which = 4)
+```
+There are some observation (9, 20) that are quite a lot higher then the others.
+However I dont consider them extreme enough to pose a problem.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(slr3, which = 2)
+```
+This is not perfect, but should be ok.
+
+### Multiple Linear Regression
+
+#### Binary + Categorical Predictor
+
+We will use cyl (Number of cylinders) and am = Transmission (0 = automatic, 1 = manual)
+as predictors for mpg.
+
+Create a contingency table:
+```{r}
+table(mtcars$cyl, mtcars$am)
+```
+There are some combinations that are quite rare (e.g. there are only two cars in the sample with
+8 cylinders and manual transmission). This might influence the spread within these groups.
+For example it could be smaller if there are only two values in one group. Then the
+mean could be a quite accurate predictor in this group, while in bigger groups the spread
+might be larger.
+
+Produce boxplots for the combinations between am and cyl:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = mtcars, mpg ~ cyl + am)
+```
+For the groups containing more samples (8.0 and 4.2) the spread of mpg is generally larger,
+then for the combinations containing less samples.
+Here we can see that in general the means for cars with manual transmission are higher then for automatic and that the means decrease from 4 to 6 and 6 to 8 cylinders.
+There is however still quite some overlap between some groups meaning the separation is not perfect.
+
+Since we dont have many samples we can also display single data points:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+mtcars %>% mutate(cyl_am = paste(cyl, am, sep = ".")) %>%
+  ggplot(aes(x = cyl_am, y = mpg)) +
+  geom_point() +
+  theme_classic()
+```
+Here again we see that there is quite some overlap between the groups, especially between
+those with the same number of cylinders. We can also see that the number
+of cylinders is better at separating the data, then the transmission type, which barely contributes
+to the separation.
+
+Fit a multiple linear regression model:
+```{r}
+mlr1 <- lm(data = mtcars, mpg ~ cyl + am)
+summary(mlr1)
+```
+In this model the reference group are the cars with automatic transmission and 4 cylinders.
+Their mean mpg value is represented by the coefficient of the intercept. 
+The other coefficients are the differences of the mean mpg of the respective groups to
+the reference group, adjusted by the other variable. E.g. the coefficient for am = 1
+is the difference in mean mpg between automatic transmission and manual transmission,
+when the number of cylinders are the same.  
+The differences between the reference and cyl = 6 as well as cyl = 8 adjusted for
+the transmission type are statistically significant at an alpha of 0.05. 
+The difference between the transmission types adjusted for cylinder types are not
+statistically significant (it is close to it however). This (the am coefficient 
+having a higher p-value then the cyl coefficients) is in line with the observations 
+above from looking at the box plots of the groups.    
+We can compare the adjusted R squared value to those of the models with only transmission type
+or number of cylinders we had previously fit:  
+- Transmission type: Adj R suqared: 0.339  
+- Nr. cylinders: Adj R suqared: 0.714  
+So the combined model is only a little better then the model that used only the number of cylinders.
+Since the coefficient for transmission type in the model is not significantly
+different from zero, we cannot be certain, that the improvement was not due to chance.
+
+**Check Model Assumptions**
+
+- Homoscedasticity
+
+To assess this we can look at a plot of the fitted value versus the
+sqrt of the standardized residuals:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr1, which = 3)
+```
+We can consider this assumption fulfilled.
+
+- Extreme Values / Outliers
+
+We can look at the Cooks distance to asses this:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr1, which = 4)
+```
+This looks ok, We can consider this assumption fulfilled.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr1, which = 2)
+```
+This is not perfect, but should be ok.
+
+#### Binary + Continuous Predictor
+
+We will use the transmission type and qsec as predictors.
+
+Lets produce a scatter plot:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = qsec, y = mpg, color = am)) +
+  geom_point() +
+  theme_classic()
+```
+  
+We see that the transmission splits the data in a group with lower values (automatic
+transmission) and higher values (manual transmission) when adjusted for qsec.\
+We can also see from this plot that am is associated to mpg since cars with automatic transmission have generally lower mpg values.\
+It is not very clear from this plot if am also has a certain association with qsec.
+This is interesting to know in order to assess if there could be confounding of the 
+association between qsec and mpg by am.\
+Lets produce a boxplot to inspect the distributions of qsec of the two transmission types:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = mtcars, qsec ~ am)
+```
+We see that the cars with manual transmission have generally a bit lower values for qsec.\
+However there is a lot of overlap.
+Nevertheless there could be confounding by am, as it seems there is an association
+between am and mpg as well as qsec.\
+
+In order to assess this further we can compare the slope of the crude association 
+between qsec and mpg and compare it to the slope adjusted for transmission type.\
+
+We had already fit a model with just qsec as predictor variable for mpg:
+```{r}
+summary(slr3)
+```
+The 95% CI for the slope is calculated as follows:
+```{r}
+#lci
+slr3$coefficients[[2]] - qt(p = 0.975, df = 30)*0.5592
+#uci
+slr3$coefficients[[2]] + qt(p = 0.975, df = 30)*0.5592
+```
+The slope that describes the increase of the mean mpg with an increase of one qsec
+is 1.41 [0.27, 2.55].
+
+Lets fit a linear model using am as well to get the slope adjusted for am:
+```{r}
+mlr2 <- lm(data = mtcars, mpg ~ am + qsec) 
+summary(mlr2)
+```
+The 95% CI for the slope is calculated as follows:
+```{r}
+#lci
+mlr2$coefficients[[3]] - qt(p = 0.975, df = 29)*0.3601
+#uci
+mlr2$coefficients[[3]] + qt(p = 0.975, df = 29)*0.3601
+```
+The slope that describes the increase of the mean mpg with an increase of one qsec
+adjusted for transmission type is 1.98 [1.25, 2.72].\
+The 95% CIs for the two slopes overlap, therefore we cannot say that there is a
+statistically significant difference between the two.\
+
+We can now do the same for am:
+```{r}
+#lci crude
+slr1$coefficients[[2]] - qt(p = 0.975, df = 30)*1.764
+#uci crude
+slr1$coefficients[[2]] + qt(p = 0.975, df = 30)*1.764
+#lci adjusted
+mlr2$coefficients[[2]] - qt(p = 0.975, df = 29)*1.2897
+#uci adjusted
+mlr2$coefficients[[2]] + qt(p = 0.975, df = 29)*1.2897
+```
+Present the results:
+```{r message = FALSE}
+cbind(c("variable", "qsec", "am"), 
+  c("unadjusted", "1.41 [0.27, 2.55]", "7.24 [3.64, 10.85]" ),
+  c("adjusted", "1.98 [1.25, 2.72]", "8.88 [6.24, 11.51]")) %>% kable()
+```
+The 95% CIs for the adjusted and adjusted slopes for am overlap as well. 
+Therefore the difference is not statistically significant at an alpha of 0.05
+and we cannot say for sure that there was confounding.
+
+We can visually represent the comparison of the crude model for qsec with the 
+model adjusted for am, by plotting them in the same graph.\
+The blue line represents the crude model and the red and green lines the adjusted model:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+#extract predictions from model
+mtcars_mlr2 <- mtcars
+mtcars_mlr2 <- predict(mlr2, interval = "confidence") %>% 
+  data.frame() %>% 
+  cbind(., mtcars_mlr2)
+
+ggplot(data = mtcars_mlr2, aes(x = qsec, y = mpg)) +
+  geom_point(aes(color = am)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr, fill = am, color = NULL), alpha = .15) +
+  geom_line(aes(y = fit, color = am), size = 1) +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  theme_classic()
+```
+  
+We see that there is overlap in the 95% CIs between the two models, which tells us
+that the difference is not statistically significant.
+
+However the R squared of the model we fit here is better then those for both
+the individual models (0.67 vs. 0.34 for only am and 0.15 for only qsec).
+So the combination definitely adds some information. The difference in slopes might 
+just not statistically significant due to the small sample size.
+
+We can also investigate if there is effect modification of the association between
+qsec and mpg by am. Meaning the association of qsec with mpg could be different for
+automatic and manual transmission.\
+Maybe this is more likely here, since am is definitely more related to mpg than qsec
+(for effect modification only an association with the outcome is necessary).
+
+We can investigate this visually by showing a plot with separate linear model
+fits for cars with automatic and manual transmission as well as the crude model for qsec:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = qsec, y = mpg)) +
+  geom_point(aes(color = am)) +
+  geom_smooth(aes(color = am, fill = am), method = "lm", alpha = .15) +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  theme_classic()
+```
+  
+We already see that the separate models for the two groups differ in slope as
+well as in their intercept and their 95% CIs hardly overlap. However their 95%
+CIs again overlap with the 95% CI for the crude model.\
+This tells us that the differences of the slopes for the separate models to the crude
+model are not statistically significant.\
+
+Even if the slopes of the separate models are not significantly different, it is still
+obvious when visually comparing the fit of the models, that the adjusted model as well as the
+two separate models per transmission type fit the data better, then the crude model.  
+Therefore their result can be considered relevant and the difference might be statistically
+significant with a bigger sample.\
+
+When comparing the plots with the two different slopes to the adjusted model above visually, 
+especially the fit for cars
+with manual transmission is better. Therefore the model with 
+interaction terms could be preferable.\
+
+In a case where there is effect modification like here, we have the choice to either present
+the two models separately, or fit one model with an interaction term as follows:
+```{r}
+mlr3 <- lm(data = mtcars, mpg ~ am + qsec + am*qsec)
+summary(mlr3)
+```
+This has the advantage, that we can fit one model using all the data and it also provides
+a formal hypothesis test, to determine if the effect modification is statistically
+significant.\
+Here this is not the case, as the interaction term (am1:qsec) is not 
+significantly different from zero.\
+Compared to the adjusted model here the intercept and the coefficient for am are
+no longer significantly different from zero. However the adjusted R squared is a bit better
+(0.6923 instead of 0.6652)
+
+The way to go here would probably be to collect more data if possible or to include
+more variables that might modify or confound the the association between qsec and mpg.
+
+**Check Model Assumptions**
+
+- Linearity 
+
+Here we have to assess the adjusted linearity between the predictor variables and 
+the outcome.
+We can do this via inspecting an adjusted variable plot produced via the function
+car::avPlots.
+For the model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+avPlots(mlr2)
+```
+and with the interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+avPlots(mlr3)
+```
+All plots show a reasonably linear relation. The assumption is therefore fulfilled.
+
+- Homoscedasticity
+
+To assess homoscedasticity we can look at a plot of the fitted value versus the
+sqrt of the standardized residuals.
+
+Model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr2, which = 3)
+```
+The residuals increase a bit with higher fitted values.
+
+Model with interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr3, which = 3)
+```
+Looks ok. The drop of to the left is only due to two quite small
+values on the left.
+
+- Extreme Values / Outliers
+
+We can look at the Cooks distance to asses this.
+
+Model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr2, which = 4)
+```
+This looks ok.
+
+Model with interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr3, which = 4)
+```
+Looks ok as well.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed.
+
+Model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr2, which = 2)
+```
+Looks more or less ok, only one point that is a bit off (15). 
+
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(mlr3, which = 2)
+```
+Looks ok as well, but there are three point s that are a bit off.
+
+#### Adding another variable
+
+We will now add cyl as well to the model:
+```{r}
+mlr4 <- lm(data = mtcars, mpg ~ am + qsec + cyl)
+summary(mlr4)
+```
+The coefficients for the intercept, am = 1 and qsec are no longer statistically
+significant. As discussed above for the intercept this is not really a problem, 
+since it represents here cars with am = 0, cyl = 4 and qsec = 0 (which is quite 
+far off of the lowest value for qsec in the dataset.) 
+
+The adjusted R squared improved compared to the model including only am and qsec,
+but is around the same for the model including transmission type and cyl. 
+This would indicate that qsec does not add much to the model here and the simpler
+model should be preferred.
+
+### Finding The Best Model
+
+Since in this data set we have several more variables, we can now try to find the 
+combination of variables, which gives us the "best" model.
+
+The criterium to choose the best model depends on our goal 
+(e.g. prediction vs. inference)
+
+We will first do some reformatting
+```{r}
+mtcars$vs <- as.character(mtcars$vs)
+mtcars$am <- as.character(mtcars$am)
+
+#give more descriptive values for vs and am
+mtcars <- mtcars %>% mutate(vs = replace(mtcars$vs, vs == 0, "v_shaped")) %>%
+        mutate(vs = replace(.$vs, vs == 1, "straight"))
+mtcars <- mtcars %>% mutate(am = replace(mtcars$am, am == 0, "automatic")) %>%
+        mutate(am = replace(.$am, am == 1, "manual"))
+
+#convert factors to factors:
+mtcars$vs <- as.factor(mtcars$vs)
+mtcars$gear <- as.factor(mtcars$gear)
+mtcars$carb <- as.factor(mtcars$carb)
+mtcars$am <- as.factor(mtcars$am)
+```
+
+Show structure:
+```{r}
+str(mtcars)
+```
+
+We will now use the best subset method to find the best combination of variables to fit our Model.
+For this we will use the olsrr::ols_step_best_subset function.
+
+Use the function:
+```{r cache=TRUE}
+#fit model
+bestsub_model <- lm(mpg ~ ., data = mtcars)
+#find best subsets
+bestsub <- ols_step_best_subset(bestsub_model)
+#select and print relevant information from output
+cbind(n_variables = bestsub[, "n"], 
+      var_included = bestsub[, "predictors"], 
+      adj_R2 = round(bestsub[, "adjr"], digits = 3),
+      AIC = round(bestsub[, "aic"], digits = 3)) %>% 
+        kable()
+```
+The output above shows us which variables where included in the best model per 
+"model size" (how many variables are included) as well as the adjusted R squared 
+and AIC for each of these models.  
+
+Which criterion we use to select the "best" model depends on our intention.
+For example, if our intention is prediction, we would likely choose the model with the 
+highest adjusted R squared.  
+We will use the adjusted R squared as a guide to indicate to us the most promising
+models. We will then have a closer look at them an the variables they include.
+
+We get the best adjusted R squared for the model including 4 variables. 
+The adjusted R squared for the model including three variables however is very close.
+The AIC indicates to us these two models as being the most promising as well.  
+
+Both these models include:  
+- cyl (= Number of cylinders)  
+- hp (= Gross horsepower)  
+- wt (= Weight (1000 lbs))  
+
+The model including 4 variables additionally contains am (= Transmission type).
+
+Plot hp and wt against mpg respectively using color to indicate cyl:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = hp, y = mpg, color = cyl)) +
+        geom_point() +
+        ggtitle("Gross Horsepower vs. Miles per Gallon Grouped by Nr. of Cylinders") +
+        theme_classic()
+```
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = wt, y = mpg, color = cyl)) +
+        geom_point()+
+        ggtitle("Weight (1000 lbs) vs. Miles per Gallon Grouped by Nr. of Cylinders") +
+        theme_classic()
+```
+  
+The relation with mpg looks quite linear for both of the variables. The number of cylinders 
+seems to be associated with mpg, ht and wt indicating that cyl confounds the 
+relationships of ht and wt with mpg (and the other way around). So it makes sense 
+to include them together in a model, instead of fitting separate models for the variables.
+
+In both of the diagrams we can see a certain "diminishing return" for an increase 
+in our variable, meaning the mpg decreases less for high values of 
+weight and horsepower respectively.
+
+From the plot for horsepower vs. mpg we could speculate that an interaction term between
+hp and cyl could benefit the model fit. We can assess that by imagining a separate linear fit 
+for each cyl number each with a different slope and compare these fits to fits to the 
+groups with the same slope for all the data. 
+Here it seems like fits with different slopes would explain more of the variability.  
+However the problem with this would be that we dont really have that much data and it
+is therefore quite possible that the different slopes of these fits would be just due to
+noise in the data and not because "the rules change" between the groups (overfitting).
+
+Lets fit a model without interaction term:
+```{r}
+bestsub_mod3 <- lm(mpg ~ wt + hp + cyl, data = mtcars)
+summary(bestsub_mod3)
+```
+And now with an interaction term between cyl and hp:
+```{r}
+bestsub_mod3_int <- lm(mpg ~ wt + hp + cyl + cyl*hp, data = mtcars)
+summary(bestsub_mod3_int)
+```
+The adjusted R squared increased slightly with the interaction term. 
+When comparing which coefficients are statistically significant we see that in 
+the model with interaction term cyl8:hp "become" significant, where they where 
+not in the model without interaction terms. For cyl6 the opposite happens.
+The reason for this might be that the data with cyl = 8 is fit better with a 
+separate slope, then the slope with which all of the data would be fit.
+For the group with cyl = 6 no separate slope is needed to fit the data well.   
+
+Here I would probably not include this in the final model due to the risk of 
+over fitting (as discussed above).
+
+In the model without interaction term, the coefficient for hp is not significant
+(although it is close). I think this could be attributed to the small sample size
+it would probably "become significant" with a bigger sample.
+
+The coefficient for cyl = 8 is not significant as well. We can check if the variable
+cyl as a whole is significant by fitting a model without it and performing ANOVA
+between the models with and without cyl (this constitutes a partial F-test):
+```{r}
+bestsub_mod3_wocyl <- lm(mpg ~ wt + hp, data = mtcars)
+anova(bestsub_mod3_wocyl, bestsub_mod3)
+```
+The result is that there is no significant change by adding cyl as variable (although its close). 
+Its possible that this is also due to the small sample size.
+
+Lets repeat the plots but by using transmission type to color the points:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = hp, y = mpg, color = am)) +
+        geom_point() +
+        ggtitle("Gross Horsepower vs. Miles per Gallon Grouped by Nr. of Cylinders") +
+        theme_classic()
+```
+
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = wt, y = mpg, color = am)) +
+        geom_point() +
+        ggtitle("Weight (1000 lbs) vs. Miles per Gallon Grouped by Nr. of Cylinders") +
+        theme_classic()
+```
+  
+From the plots it seems that transmission type is associated with mpg and wt as well,
+for hp too, but not as clearly as cyl.
+
+Lets fit the model:
+```{r}
+bestsub_mod4 <- lm(mpg ~ wt + hp + cyl + am, data = mtcars)
+summary(bestsub_mod4)
+```
+
+And perform a partial F-test for am:
+```{r}
+anova(bestsub_mod3, bestsub_mod4)
+```
+The addition does not change the model in a statistically significant manner.
+
+Due to that and because the difference in adjusted R squared between the two models
+is quite small, the model without transmission type should probably be preferred,
+as it explains nearly the same amount of variance in the data with less variables.
+
+#### Log Transform
+
+From the plots of ht and wt against mpg it seems like the model fit could profit
+from a log transformation of mpg, as then the fit would resemble an exponential decay,
+which might fit the data better and also take into account that there probably are 
+diminishing returns for mpg, when increasing wt as well as ht.
+
+We can again find the best model with different subsets of variables, but now with
+log(mpg) as outcome:
+```{r cache=TRUE}
+#fit model
+bestsub_model_log <- lm(log(mpg) ~ ., data = mtcars)
+#find best subsets
+bestsub_log <- ols_step_best_subset(bestsub_model_log)
+#select and print relevant information from output
+cbind(n_variables = bestsub_log[, "n"], 
+      var_included = bestsub_log[, "predictors"], 
+      adj_R2 = round(bestsub_log[, "adjr"], digits = 3),
+      AIC = round(bestsub_log[, "aic"], digits = 3)) %>% 
+        kable()
+```
+The best model found like this is one that includes only ht and wt and its 
+adjusted R squared is better then all of the models fit so far with this data.
+
+Fit and show the model:
+```{r}
+bestsub_mod2 <- lm(log(mpg) ~ wt + hp, data = mtcars)
+summary(bestsub_mod2)
+```
+Both of the coefficients and the intercept are significant.
+
+At least for prediction, this model should be preferred against all the others.
+
+Does it make a difference if we take the logarithm of the outcome or of the 
+predictors?
+
+Fit a model with the logarithms of wt and hp against mpg:
+```{r}
+bestsub_mod2_log <- lm(mpg ~ log(wt) + log(hp), data = mtcars)
+summary(bestsub_mod2_log)
+```
+The adjusted R squared improved a bit.
+
+It is unclear why this might be the case.
+Lets plot log(hp) vs. mpg and hp vs. log(mpg) including regression lines:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+p1 <- mtcars %>% ggplot(aes(x = log(hp), y = mpg)) +
+        geom_point() +
+        ggtitle("log(hp) vs. mpg") +
+        theme_classic() +
+        geom_smooth(method = "lm")
+
+p2 <- mtcars %>% ggplot(aes(x = hp, y = log(mpg))) +
+        geom_point() +
+        ggtitle("hp vs. log(mpg)") +
+        theme_classic()+
+        geom_smooth(method = "lm")
+
+plot_grid(p1, p2, labels = c("", ""))
+```
+Maybe the fit for log(hp) vs. mpg is a bit better, but I would probably 
+attribute the improvement in adjusted R squared to noise.
+
+For simplicity I will continue with the model with just mpg logarithmized to look
+at its diagnostic plots / check the model assumptions:
+
+**Check Model Assumptions**
+
+- Linearity 
+
+We already looked at scatter plots for hp vs. log(mpg).  
+
+wt vs. log(mpg):
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+mtcars %>% ggplot(aes(x = wt, y = log(mpg))) +
+        geom_point() +
+        ggtitle("wt vs. log(mpg)") +
+        theme_classic()+
+        geom_smooth(method = "lm")
+```
+  
+There seems to be a reasonably linear relationship between the two variables.
+
+- Homoscedasticity
+
+To assess homoscedasticity we can look at a plot of the fitted value versus the
+sqrt of the standardized residuals.
+
+Model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(bestsub_mod2, which = 3)
+```
+Looks ok.
+
+- Extreme Values / Outliers
+
+We can look at the Cooks distance to asses this.
+
+Model without interaction term:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(bestsub_mod2, which = 4)
+```
+There are two values that are quite a bit higher then the rest.
+Lets look at them in the two scatter plots:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+p1 <- mtcars %>% ggplot(aes(x = wt, y = log(mpg), 
+                      label = rownames(mtcars))) +
+        geom_point(color = ifelse(rownames(mtcars) %in% c("Chrysler Imperial", "Maserati Bora"), "red", "black")) +
+        ggtitle("wt vs. log(mpg)") +
+        theme_classic() +
+        geom_text(aes(label = ifelse(rownames(mtcars) %in% c("Chrysler Imperial", "Maserati Bora"), rownames(mtcars), ""),
+                      hjust = 1.1))
+
+p2 <- mtcars %>% ggplot(aes(x = hp, y = log(mpg), 
+                      label = rownames(mtcars))) +
+        geom_point(color = ifelse(rownames(mtcars) %in% c("Chrysler Imperial", "Maserati Bora"), "red", "black")) +
+        ggtitle("hp vs. log(mpg)") +
+        theme_classic() +
+        geom_text(aes(label = ifelse(rownames(mtcars) %in% c("Chrysler Imperial", "Maserati Bora"), rownames(mtcars), ""),
+                      hjust = 1.1))
+
+plot_grid(p1, p2, labels = c("", ""))
+```
+They both look to be somewhat off in one of the plots.
+
+- Normality
+
+We can look at a QQ plot to determine if the residuals are normally distributed.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(bestsub_mod2, which = 2)
+```
+Again the Chrysler Imperial looks to be a bit off, otherwise it doesnt look too bad.
+
+We could also repeat the model search with the best subset method on a data set where all
+the continuous predictors are replaced by their logarithm (and mpg isnt logarithmized).
+
+The problem with this data set is that it is quite small. With more data it might 
+make sense to include more variables, as many of them seem to contain valuable information.
+
+## Event-Time Outcome
+
+### Simple Cox Regression:
+
+We will use the suvival::lung data set, which contains data about "Survival 
+in patients with advanced lung cancer from the North Central Cancer Treatment Group"
+as well as several possible predictors of survival.
+
+Load in data and show structure:
+```{r}
+lung <- survival::lung
+str(lung)
+```
+
+Define the factor variables sex and ph.ecog as such:
+```{r}
+lung <- lung %>% mutate(sex = as.factor(sex),
+                ph.ecog = as.factor(ph.ecog))
+```
+
+Create a survival object:
+```{r}
+surv_lung <- Surv(lung$time, lung$status)
+```
+
+How many died, how many where censored? (2 = dead)
+```{r}
+table(lung$status)
+```
+
+Kaplan-Meier Plot for whole sample:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(surv_lung ~ 1, )
+```
+
+#### Binary Predictor Variable
+
+We will use the sex of the patient as predictor.
+
+Produce a kaplan-meier plot for male and female patients:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(survfit(surv_lung ~ lung$sex), 
+     lty = c("solid", "dashed"), 
+     xlab = "FU_days", 
+     ylab = "Event")
+
+legend("topright", 
+       c("Male", "Female"), 
+       lty = c("solid", "dashed"))
+```
+Females seem to survive generally longer then males, after around 800 days the
+the females "catch up".
+
+Fit a Cox model for sex as predictor variable:
+```{r}
+coxrm_1 <- coxph(surv_lung ~ lung$sex)
+summary(coxrm_1)
+```
+The reference group here is male, therefore we can see that the risk for females is
+smaller then for males, since the coefficient is negative. This means that if we 
+exponentiate the coefficient to get the hazard ratio, this will be lower then one.
+
+The difference between the groups is significant (at an alpha = 0.05). 
+This is shown by the p-value being 0.00149 < 0.05 and the confidence
+interval for the coefficient [0.4237, 0.816] not including one.
+
+The hazard ratio for females vs males is exp(coef) = 0.5880
+and for males vs. females exp(-coef) = 1.701.
+
+**Check Model Assumptions**
+
+- Proportional Hazards Assumption
+
+The proportional hazards assumption means, that we assume, that for all predicting variables the
+hazard is proportional to the baseline hazard. Namely here that the hazard for males is proportional
+to the hazard of females.
+
+It can be checked using scaled Schoenfeld residuals.
+We can use survival::cox.zph in order to test the proportional hazards assumption.
+For the assumption to hold, there needs to be a result, where all the p values are above
+the alpha level (0.05). 
+
+Lets look at this for the model we have fit:
+```{r}
+coxrm_1_ph <- cox.zph(coxrm_1)
+coxrm_1_ph
+```
+
+The proportional hazards assumption seems 
+to be fulfilled here.
+
+- Testing Influential Observations
+
+We can do this using the survminer::ggcoxdiagnostics function
+
+This function includes several methods. “dfbeta”, plots the estimated changes in 
+the regression coefficients upon deleting each observation in turn.
+```{r warning=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+ggcoxdiagnostics(coxrm_1, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_classic())
+```
+There are no single values, that are very influential.
+
+#### Categorical Predictor Variable
+
+We will now use the ECOG performance score (ph.ecog) as an ordinal predictor (using it
+as continuous would not make a lot of sense, since we cannot assume that the differences
+in effect scale over the different groups =>  e.g. difference between 0 and 2 is the same as between
+1 and 3)
+
+ECOG performance score as rated by the physician:   
+- 0 = asymptomatic   
+- 1 = symptomatic but completely ambulatory   
+- 2 = in bed <50% of the day  
+- 3 = in bed > 50% of the day but not bedbound   
+- 4 = bedbound  
+
+How many patients per group participated in the study?
+```{r}
+table(lung$ph.ecog)
+```
+There are none in group 4 and only one in group 3.
+The total of the table is 227, meaning that one record is missing.
+
+There is one record with an NA value for ph.ecog.
+
+Produce a kaplan-meier plot for the different groups:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(survfit(surv_lung ~ lung$ph.ecog), col = c("red", "blue", "green", "black"), xlab = "FU_days", ylab = "Event")
+legend("topright", c("ECOG = 0", "ECOG = 1", "ECOG = 2", "ECOG = 3"), col = c("red", "blue", "green", "black"), lty = "solid")
+```
+We can see that generally the patients with higher scores die earlier in groups
+0 to 2. For group 3 we cannot really make much of a statement since there was only one
+patient.
+
+We will now fit models with or without the record for group 3 in order to see if
+it containing only one record leads to problems with the model.
+
+In order to fit a model with ECOG score as ordinal we can produce dummy variables
+for the groups (since we had previously formated the variable as factor, it would 
+also work without this step):
+```{r}
+lung_ecog_d <- lung %>% 
+  select(time, status, ph.ecog) %>% 
+  mutate(ph.ecog_0 = as.numeric(ph.ecog == 0),
+         ph.ecog_1 = as.numeric(ph.ecog == 1),
+         ph.ecog_2 = as.numeric(ph.ecog == 2),
+         ph.ecog_3 = as.numeric(ph.ecog == 3))
+```
+
+Fit a model including the record in group 3.
+For this we can use the same survival object (surv_lung) as for the last model,
+since we use all the records. We will use ECOG = 0 as reference group.
+```{r}
+#filter out the NA value
+lung_ecog_d_filt <- lung_ecog_d %>% 
+  filter(is.na(ph.ecog) == FALSE)
+
+#create survival object
+surv_ecog_d <-  Surv(lung_ecog_d_filt$time, lung_ecog_d_filt$status)
+
+#fit model
+coxrm_3 <- coxph(surv_ecog_d ~ lung_ecog_d_filt$ph.ecog_3 + lung_ecog_d_filt$ph.ecog_2 + lung_ecog_d_filt$ph.ecog_1 + lung_ecog_d_filt$ph.ecog_0)
+summary(coxrm_3)
+```
+The differences with ECOG = 0 are significant for the groups 2 and 3 and close to it for
+group 1 (p = 0.0634).  
+For group 3 there is a very big confidence interval, which makes sense, as we only have one record in it.
+Therefore the estimated coefficient for this group is not very useful.
+
+Fit a model without the record from group 3:
+```{r}
+#filter out the record from group 3
+lung_ecog_d_filt_wo3 <- lung_ecog_d_filt %>% filter(ph.ecog_3 != 1)
+#create survival object
+surv_ecog_wo3 <- Surv(lung_ecog_d_filt_wo3$time, lung_ecog_d_filt_wo3$status)
+#fit model
+coxrm_4 <- coxph(surv_ecog_wo3 ~ lung_ecog_d_filt_wo3$ph.ecog_2 + lung_ecog_d_filt_wo3$ph.ecog_1 + lung_ecog_d_filt_wo3$ph.ecog_0)
+summary(coxrm_4)
+```
+This only led to minor changes in the model.\
+So including the record from group 3 seems not to lead to any problems, but it
+probably does not make much sense to give to much weight to the calculated coefficient,
+as the sample size for this group is way too small.
+
+**Test Model Assumptions**
+
+- Proportional Hazards Assumption
+
+Test both of the models we have fit:
+Including group 3
+```{r}
+coxrm_3_ph <- cox.zph(coxrm_3)
+coxrm_3_ph
+```
+Without group 3
+```{r}
+coxrm_4_ph <- cox.zph(coxrm_4)
+coxrm_4_ph
+```
+The p value of the global test changed, but the assumption is fulfilled for both models.
+
+- Testing Influential Observations
+
+Including group 3 
+```{r message=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+ggcoxdiagnostics(coxrm_3, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_classic())
+```
+Without group 3 
+```{r message=FALSE, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+ggcoxdiagnostics(coxrm_4, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_classic())
+```
+The reference category cannot really be inspected. I dont know why this is the case.
+For the other groups there seem not to be any too influential observations.
+
+#### Continuous Predictor Variable
+
+We will use the age of the patients as predictor.
+
+Look at age distribution in the sample:
+```{r, fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+summary(lung$age)
+boxplot(lung$age)
+```
+  
+The distribution is quite symmetric with a range from 39 to 82 and a mean of around 63.
+
+Fit the model:
+```{r}
+coxrm_5 <- coxph(surv_lung ~ lung$age)
+summary(coxrm_5)
+```
+There is a significant association between age and survival time. However it is not
+very clear (the confidence interval for the hazard ratio is close to 1 and the p value
+0.0419, close to 0.05).  
+
+**Test Model Assumptions**
+
+- Proportional Hazards Assumption
+
+```{r}
+coxrm_5_ph <- cox.zph(coxrm_5)
+coxrm_5_ph
+```
+The proportional hazards assumption is fulfilled for this model.
+
+- Testing Influential Observations
+
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+ggcoxdiagnostics(coxrm_5, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_classic())
+```
+None of the observations seem to be too influential.
+
+- Non Linearity
+
+Since we now use a continuous predictor we also have to test if this
+predictor and the outcome (log of hazard) have a linear relationship.\
+One way to test this, is by binning the predictor variable (for example by quartiles) 
+and then fitting a model of these bins as ordinal variable and check if the
+coefficients increase or decrease in a more or less linear fashion, meaning the most extreme values 
+in one direction show the biggest difference from the most extreme values in the 
+other direction.
+
+Get borders of quartiles:
+```{r}
+quart_age <- quantile(lung$age, prob=c(0,.25,.5,.75,1))
+```
+
+Bin the data
+```{r}
+lung_age_bin <- lung %>%
+  mutate(age_1q = as.numeric(between(age, quart_age[1], quart_age[2])), 
+         age_2q = as.numeric(between(age, quart_age[2], quart_age[3])),
+         age_3q = as.numeric(between(age, quart_age[3], quart_age[4])),
+         age_4q = as.numeric(between(age, quart_age[4], quart_age[5])))
+```
+
+Fit a model
+```{r}
+coxrm_6 <- coxph(surv_lung ~ lung_age_bin$age_1q + lung_age_bin$age_2q + lung_age_bin$age_3q + lung_age_bin$age_4q)
+summary(coxrm_6)
+```
+We see that the coefficients dont increase in a linear fashion. The biggest difference
+is between the fourth quartile and the other three. There seems to be no clear trend 
+for Quartiles 1 to 3. It looks like young age (in quart 1-3) might have some protective effect.
+
+The assumption of linearity is therefore not fulfilled.
+
+Alternatively we can use the survminer::ggcoxfunctional function
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+ggcoxfunctional(coxrm_5, data = lung)
+```
+The fitted line should be linear to in order to fulfill the linearity assumption.
+Here also this is not fulfilled.
+
+### Multiple Cox Regression
+
+#### Binary + Categorical Predictor Variables
+
+We will use sex and ECOG rating as predictors for survival.
+
+Produce Kaplan-Meier plot for each combination of ECOG rating and sex:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plot(survfit(surv_lung ~ lung$sex + lung$ph.ecog), 
+     col = c("red", "blue", "green", "black", "red", "blue", "green"),
+     lty=c(1, 1, 1, 1, 2, 2, 2),
+     xlab = "FU_days", ylab = "Event")
+legend("topright", c("M / ECOG = 0", "M / ECOG = 1", "M / ECOG = 2", "M / ECOG = 3",
+                     "F / ECOG = 0", "F / ECOG = 1", "F / ECOG = 2"), 
+       col = c("red", "blue", "green", "black", "red", "blue", "green"),
+       lty=c(1, 1, 1, 1, 2, 2, 2))
+```
+When we compare the female to male curves with the same ECOG ratings we see that
+survival times are generally higher for women.
+When we compare the ECOG ratings for people of the same sex, we can see the same tendency as
+observed above, that a higher ECOG rating generally indicates lower survival times.
+
+From this we can say that there is confounding between the variables and
+we can expect a model that includes both of these to be better then the models using
+only one of them.
+
+Fit model:
+```{r}
+mcoxrm_1 <- coxph(surv_lung ~ lung$sex + lung$ph.ecog)
+summary(mcoxrm_1)
+```
+Both variables are significantly different from zero at an alpha of 0.05.
+Even all the levels of the ECOG ranking are significant, as we can see from the respective
+p-values being lower then 0.05 and the 95% CIs that exclude 1.
+
+We can see that the general tendencies we have observed in the Kaplan-Meier plot
+are represented here in the model. Meaning women having lower risk (sex = 2 has an
+exp(coefficient) lower then one) and higher ECOG ranking has higher risk, represented by
+the exp of the coefficients increasing with higher rankings.
+
+The concordance can be used to evaluate how well the model fits the data.
+Larger values are better.  
+Set up a data frame with all the values of the models fit so far
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+conc_coxm <- data.frame(mean = c(0.579, 0.604, 0.55, 0.642),
+                        se = c(0.021, 0.024, 0.025, 0.025),
+                        predictor = c("sex", "ecog", "age", "sex+ecog"))
+#calculate 95% CIs
+conc_coxm <- conc_coxm %>% mutate(lci = mean-qt(p=0.975, df = 227)*se,
+                                  uci = mean+qt(p=0.975, df = 227)*se)
+#plot
+conc_coxm %>% ggplot(aes(y = mean, x = predictor)) +
+  geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin = lci, ymax = uci)) +
+  theme_classic() +
+  geom_text(aes(label = mean), nudge_y = 0.016, nudge_x = 0.13) +
+  labs(title = "Concordance Of Cox Regression Models Using Different Predictors")
+
+```
+  
+We can see that the value for the model using sex and the ECOG score has a higher
+concordance value then the previous models using only one predictor variable. So
+the combination of the two predictors seems to improve the model as was speculated above.\
+Of the previous models the one with the ECOG ranking was the best.
+
+Lets find out if there was statistically significant confounding by looking at 
+changes in the coefficients of the model:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+coeff_unadj_adj <- data.frame(expcoef = c(0.5799, 1.5192, 2.5792, 7.7565, 0.588, 1.446, 2.500, 9.097),
+                           lci = c(0.4171, 1.0277, 1.6602, 1.0366, 0.4237, 0.9797, 1.6101, 1.2182),
+                           uci = c(0.8062, 2.2459, 4.0067, 58.0390, 0.816, 2.134, 3.883, 67.937),
+                           predictor = c("sexF", "ECOG1", "ECOG2", "ECOG3", "sexF", "ECOG1", "ECOG2", "ECOG3"),
+                           model = c("unadjusted", "unadjusted", "unadjusted", "unadjusted", "adjusted", "adjusted", "adjusted", "adjusted"))
+
+#coeff_c_vs_s
+coeff_unadj_adj %>% ggplot(aes(x = predictor, y = expcoef, fill = model)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_errorbar(aes(ymin = lci, ymax = uci), position=position_dodge(.9)) +
+  ylim(0, 10) +
+  theme_classic() +
+  labs(title = "Comparison Of Exponentiated Coefficients For Unadjusted And Adjusted Models")
+
+```
+The changes in the coefficients are not statistically significant for any of them.
+I am not sure why.
+
+**Test Model Assumptions**
+
+- Proportional Hazards Assumption
+
+We have already previously tested this for sex and ECOG rating.
+
+- Testing Influential Observations
+
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+ggcoxdiagnostics(mcoxrm_1, type = "dfbeta",
+                 linear.predictions = FALSE, ggtheme = theme_classic())
+```
+     
+None of the observations seem to be too influential.
+
+#### Binary + Categorical + Continuous Predictor Variables
+
+We will now also add Age as a predictor variable:
+
+lets look at the age distributions for sex, ECOG groups and their combinations:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = lung, age ~ sex)
+```
+We see that in general the women in the sample are a bit younger.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = lung, age ~ ph.ecog)
+```
+We see that the the patients with higher ecog scores are generally older than the
+ones with lower scores. This makes sense if we assume that the onset for the 
+disease is around the same age for most people. We can expect the disease to progress
+over time leading to more severe symptoms and therefore higher ECOG rankings at higher age.
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+boxplot(data = lung, age ~ sex + ph.ecog)
+```
+For ECOG = 1 and 2 we see the same tendencies as above. For ECOG = 3 the age of 
+women is generally a bit higher then for men.
+
+Fit a model:
+```{r}
+mcoxrm_2 <- coxph(surv_lung ~ lung$sex + lung$ph.ecog + lung$age)
+summary(mcoxrm_2)
+```
+We see that the coefficient fit for age does not differ significantly from zero 
+at an alpha of 0.05. We can try to look at this in the light of the previously 
+fit models and produced plots. The model fit with only age as predictor gave a
+hazard ratio for only a little more then one for every increase of 1 year in age.
+The p-value was only slightly below the alpha. The unadjusted model we had fit for 
+sex gave a risk ratio <1 which was more clearly found to be significant. For ECOG
+ranking the risk increased with higher rankings and the risk ratios where more 
+clearly found to be significantly different from 1.\
+In the graph above we saw that in ECOG = 2 women are generally older then man.
+This means that the general tendencies of the influence of age and sex on the
+survival are not the same in all groups of ECOG ranking. This might be the reason 
+for the coefficient for age not being significantly different from zero.
+
+Concordance of this model is slightly lower then for the model fit with sex and 
+ECOG ranking only.
+
+### Finding The Best Model
+
+Since in this data set we have several more variables, we can now try to find the 
+combination of variables, which gives us the "best" model.
+
+We will do this via backwards selection. This means we will fit a model including
+all variables and then remove variables from the model to improve it. We will not
+do this by a fix criterium (such as always remove the variable with the highest p-value),
+but will try to also consider other factors.
+
+We will first do some reformatting
+```{r}
+lung <- survival::lung
+
+#give more descriptive values for sex
+lung$sex <- as.character(lung$sex )
+lung <- lung %>% mutate(sex = replace(.$sex, sex == "1", "male")) %>%
+        mutate(sex = replace(.$sex, sex == "2", "female"))
+
+#convert factors to factors:
+lung$inst <- as.factor(lung$inst)
+lung$sex <- as.factor(lung$sex)
+lung$ph.ecog <- as.factor(lung$ph.ecog)
+
+str(lung)
+```
+
+Lets see how many NAs there are per row:
+```{r}
+lung %>% is.na() %>% colSums()
+```
+
+How many records are complete?
+```{r}
+lung %>% complete.cases() %>% table()
+```
+
+Its not too many. Lets fit a model using all the variables and ignoring the records with NAs:
+```{r cache=TRUE}
+mcoxrm_all <- coxph(data = lung, Surv(time = lung$time, event = lung$status) ~ .)
+summary(mcoxrm_all)
+```
+
+It seems unlikely that the institution variable adds much to the model. While it 
+might be plausible that the survival could be better in some institutions, due to 
+varying treatment quality, it seems unlikely that a clear difference between all of
+the 18 institutions in this data set.
+
+Lets perform a partial F test to see if the difference between the models with and
+without the institution variable as a predictor is significant.
+
+In order to do this, we have to refit the model including all variables without
+the record, where inst == NA:
+```{r}
+lung_2 <- lung %>% filter(!is.na(.$inst))
+
+mcoxrm_all_2 <- coxph(data = lung_2, Surv(time = lung_2$time, event = lung_2$status) ~ .)
+```
+
+Produce a data frame without inst:
+```{r}
+lung_sel3 <- lung_2 %>% select(!inst)
+```
+
+Fit the model without inst and run an anova comparing them:
+```{r}
+mcoxrm_3 <- coxph(data = lung_sel3, Surv(time = lung_2$time, event = lung_2$status) ~ .)
+anova(mcoxrm_all_2, mcoxrm_3)
+```
+
+The difference between the models is not significant. We can therefore omit the
+institution variable from the model.
+
+Present the model without inst:
+```{r}
+summary(mcoxrm_3)
+```
+
+Lets look at anova for this model, which "gives a sequential analysis of deviance 
+table for that fit. That is, the reductions in the model Cox log-partial-likelihood 
+as each term of the formula is added in turn are given in as the rows of a table, 
+plus the log-likelihoods themselves" (Documentation of survival::anova.coxph):
+```{r}
+anova(mcoxrm_3)
+```
+
+The variable meal.cal is not significant according to both the model summary and
+the deviance table. Since it also contains many NA values as seen above and has 
+the highest p-value, it seems 
+to be the best candidate to remove from the model in a next step.
+
+Produce data frame without meal.cal:
+```{r}
+lung_4 <- lung %>% select(!inst & !meal.cal)
+```
+
+Fit a model:
+```{r}
+mcoxrm_4 <- coxph(data = lung_4, Surv(time = lung_4$time, event = lung_4$status) ~ .)
+summary(mcoxrm_4)
+```
+The Concordance improved a little bit.
+Lets look at the deviance table for this model:
+```{r}
+anova(mcoxrm_4)
+```
+One issue that might cause problems could be that the variables ph.karno and
+pat.karno might contain very similar information, since they both contain the
+"Karnofsky performance score". The difference is only the assessor (patient vs. physician).
+One can assume, that they are at least somewhat correlated.
+
+Lets produce a scatter plot to evaluate this. We add some noise in order to see
+all the records:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+lung %>% ggplot(aes(x = pat.karno, y = ph.karno)) +
+        geom_point() +
+        geom_jitter() +
+        theme_classic() +
+        xlim(30,100) +
+        ylim(30,100) +
+        geom_abline(slope = 1, intercept = 0)
+```
+  
+The data seems more or less normally distributed around the y = x. So there seems 
+to be some correlation here. Therefore the model would probably profit from removing
+one of these variables.
+
+There are arguments for each of them. While the the physician has more routine in
+performing the assessment and can compare patients to each other, the patient
+"has more data" about how fit he/she is.
+
+We will fit both models and compare them.
+
+Produce data frame without pat.karno:
+```{r}
+lung_5 <- lung %>% select(!inst & !meal.cal & !pat.karno)
+```
+
+Fit a model:
+```{r}
+mcoxrm_5 <- coxph(data = lung_5, Surv(time = lung_5$time, event = lung_5$status) ~ .)
+summary(mcoxrm_5)
+```
+
+Produce data frame without ph.karno:
+```{r}
+lung_6 <- lung %>% select(!inst & !meal.cal & !ph.karno)
+```
+
+Fit a model:
+```{r}
+mcoxrm_6 <- coxph(data = lung_6, Surv(time = lung_5$time, event = lung_5$status) ~ .)
+summary(mcoxrm_6)
+```
+The model with the assessment by the patient seems to be a bit better, since the
+Concordance is higher. 
+We will therefore continue with this model. However I would not consider this strong
+evidence, that the patient assessment is a better predictor in general.
+
+Lets look at the deviance table for this model:
+```{r}
+anova(mcoxrm_6)
+```
+
+Lets remove age from the model, sinc eit has the highest p-value.
+
+Try several combinations of variables and compare their Concordance values:
+```{r}
+lung_8 <- lung %>% select(!inst & !meal.cal & !ph.karno & !age)
+mcoxrm_8 <- coxph(data = lung_8, Surv(time = lung_8$time, event = lung_8$status) ~ .)
+lung_9 <- lung %>% select(!inst & !meal.cal & !age & !pat.karno)
+mcoxrm_9 <- coxph(data = lung_9, Surv(time = lung_9$time, event = lung_9$status) ~ .)
+lung_10 <- lung %>% select(!inst & !meal.cal & !age & !pat.karno & !ph.karno)
+mcoxrm_10 <- coxph(data = lung_10, Surv(time = lung_10$time, event = lung_10$status) ~ .)
+lung_11 <- lung %>% select(!inst & !meal.cal & !age & !pat.karno & !wt.loss)
+mcoxrm_11 <- coxph(data = lung_11, Surv(time = lung_11$time, event = lung_11$status) ~ .)
+lung_12 <- lung %>% select(!inst & !meal.cal & !age & !pat.karno & !ph.karno & !wt.loss)
+mcoxrm_12 <- coxph(data = lung_12, Surv(time = lung_12$time, event = lung_12$status) ~ .)
+
+data.frame(Predictors = c(as.character(c(mcoxrm_8$terms[[3]])), as.character(c(mcoxrm_9$terms[[3]])), as.character(c(mcoxrm_10$terms[[3]])), 
+                          as.character(c(mcoxrm_11$terms[[3]])), as.character(c(mcoxrm_12$terms[[3]]))),
+           Concordance = c(mcoxrm_8$concordance[[6]], mcoxrm_9$concordance[[6]], mcoxrm_10$concordance[[6]], 
+                           mcoxrm_11$concordance[[6]], mcoxrm_12$concordance[[6]])) %>% kable()
+
+```
+
+The concordance of the model with "sex + ph.ecog + pat.karno + wt.loss" as predictors
+is the best.
+
+Lets look at this model more closely:
+```{r}
+summary(mcoxrm_8)
+```
+
+The coefficients for pat.karno and wt.loss are not significantly different from zero.
+
+I think there is valuable information in all of the four predictors used in the model above.
+We could try several things to improve the model and maybe get the coefficients to be significant.
+For example we could try to bin the weight loss data. This might make sense, since
+maybe the exact weight loss does not matter that much, since the patients have different
+weights (which we dont know), meaning their relative weight losses (which are probably more
+relevant that the absolute weight loss) is unknown.
+
+Lest look at the distribution of this variable:
+```{r fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+lung_8$wt.loss %>% boxplot()
+lung_8$wt.loss %>% summary()
+```
+  
+Most patients lost some weight, some quite significant amounts, while others gained weight.
+We could speculate, that the prognosis differs for people with weight gain vs. 
+no significant wight change vs. weight loss.
+
+Lets bin the data in groups of [min, -5], [-5,5], [5, max]:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+#subset for complete cases
+lung_13 <- lung_8[complete.cases(lung_8),]
+#bin the data
+lung_13 <- lung_13 %>% mutate(wt.loss = cut(wt.loss, breaks = c(-Inf,-5,5, Inf), labels = c("gained_wt", "no change", "lost_wt")))
+#plot
+plot(survfit(Surv(time = lung_13$time, event = lung_13$status) ~ lung_13$wt.loss), col = c("red", "blue", "green"), xlab = "FU_days", ylab = "Event")
+legend("topright", c("gained wt", "no change", "lost wt"), col = c("red", "blue", "green"), lty = "solid")
+```
+
+It looks like there is some difference between the no change group and those who lost
+weight (in the direction we would expect). For the group that gained weight it seems unclear.
+
+Lets try to bin wt.loss by its quartiles:
+```{r fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+#subset for complete cases
+lung_14 <- lung_8[complete.cases(lung_8),]
+#bin the data
+lung_14 <- lung_14 %>% mutate(wt.loss = cut(wt.loss, breaks = c(-Inf, quantile(wt.loss, prob=c(.25,.5,.75)), Inf)))
+#plot
+plot(survfit(Surv(time = lung_14$time, event = lung_14$status) ~ lung_14$wt.loss), col = c("red", "blue", "green", "black"), xlab = "FU_days", ylab = "Event")
+legend("topright", c("q1", "q2", "q3", "q4"), col = c("red", "blue", "green", "black"), lty = "solid")
+```
+
+This doesnt look as expected either. Here moderate weight loss leads to better prognosis than
+weight gain. This shows, that it is not suited as continuous predictor, as it violates
+the linearity assumption.
+
+Lets look at the corresponding model:
+```{r}
+mcoxrm_14 <- coxph(data = lung_14, Surv(time = lung_14$time, event = lung_14$status) ~ .)
+summary(mcoxrm_14)
+```
+There is no big change in the Concordance. This model would be preferable to the
+model, where wt.loss is used as continuous variable, since as factor it is not
+subject to the linearity assumption.
+However in this model as well the coefficients for wt.loss are not significantly different from zero.
+
+Lets look at the model without wt.loss.
+```{r}
+summary(mcoxrm_11)
+```
+The coefficient for ph.karno is not significantly different from zero.
+
+Lets look at a model using pat.karno instead of ph.karno:
+```{r}
+lung_15 <- lung %>% select(!inst & !meal.cal & !age & !ph.karno & !wt.loss)
+mcoxrm_15 <- coxph(data = lung_15, Surv(time = lung_15$time, event = lung_15$status) ~ .)
+summary(mcoxrm_15)
+```
+The coefficient for pat.karno is not significantly different from zero either.
+
+It looks like the model we had fit previously with only sex and ph.ecog is to be 
+preferred over the others we have fit in this section (at least if the goal is inference).
