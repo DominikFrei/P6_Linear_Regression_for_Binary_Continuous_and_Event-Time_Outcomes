@@ -1,4 +1,4 @@
-# P6_Linear_Regression_for_Binary_Continuous_and_Event-Time_Outcomes
+# P6 Linear Regression for Binary Continuous and Event-Time Outcomes
 
 ## Abstract
 
