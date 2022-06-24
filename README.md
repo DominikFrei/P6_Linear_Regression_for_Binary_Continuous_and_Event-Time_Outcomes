@@ -3,7 +3,7 @@
 ## Abstract
 
 The aim of this work was to get some intuition about linear regression. Three different
-data sets where used (titanic, mtcars, lung) and different types of data where used 
+data sets where used and different types of data where used 
 as dependent variable:  
 - Titanic: Survival (Binary)  
 - mtcars: mpg (Miles per Gallon; Continuous)  
